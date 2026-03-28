@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, mkdirSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { loadDotenv, expandVars } from "./env.js";
@@ -133,9 +133,11 @@ if (filter) {
 const domains = groupByDomain(features);
 const totalScenarios = features.reduce((sum, f) => sum + f.scenarios.length, 0);
 
-// Initialize results
+// Initialize results and ui-maps directory
 const runId = generateRunId();
 const { resultsPath, screenshotsDir } = initResultsFile(projectRoot, runId);
+const uiMapsDir = resolve(projectRoot, "features/ui-maps");
+mkdirSync(uiMapsDir, { recursive: true });
 console.log(`Results: features/exspec/${runId}.md\n`);
 
 // Run setup commands (after validation, before test execution)

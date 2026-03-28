@@ -57,7 +57,7 @@ function invokeClaude(prompt: string, cwd: string): Promise<ClaudeOutput> {
         "-p",
         prompt,
         "--allowedTools",
-        "Bash(playwright-cli:*)",
+        "Bash(playwright-cli:*) Skill Read Write Glob",
         "--output-format",
         "stream-json",
         "--verbose",
