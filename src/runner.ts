@@ -11,7 +11,7 @@ export async function runDomain(
   domain: string,
   projectRoot: string,
   expectedScenarioNames: string[],
-  options: { record?: boolean } = {},
+  options: { record?: boolean; featurePath?: string } = {},
 ): Promise<DomainResult> {
   try {
     const { result, cost, duration } = await invokeClaude(prompt, projectRoot);
@@ -23,12 +23,13 @@ export async function runDomain(
     );
 
     // Extract and save compiled replay script from the agent's output
-    if (options.record) {
+    if (options.record && options.featurePath) {
       const replayScript = extractReplayScript(result);
       if (replayScript) {
         const scriptPath = saveCompiledScript(
           projectRoot,
           domain,
+          options.featurePath,
           replayScript,
         );
         console.log(`    📝 Compiled script saved: ${scriptPath}`);

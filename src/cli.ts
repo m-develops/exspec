@@ -176,11 +176,13 @@ for (const [domain, domainFeatures] of domains) {
   const expectedScenarioNames = domainFeatures.flatMap((f) =>
     f.scenarios.map((s) => s.name),
   );
+  const featurePath = domainFeatures[0].filePath;
 
   let result;
 
   // Check if we can replay from compiled scripts
-  const canReplay = !forceRecord && hasCompiledScript(projectRoot, domain);
+  const canReplay =
+    !forceRecord && hasCompiledScript(projectRoot, domain, featurePath);
 
   if (canReplay) {
     console.log(`  ⚡ Replaying ${domain} from compiled script...`);
@@ -189,8 +191,35 @@ for (const [domain, domainFeatures] of domains) {
       projectRoot,
       expectedScenarioNames,
       configContent,
+      featurePath,
       { headed },
     );
+
+    // Auto-fallback: if replay had failures, re-record with AI
+    const replayFailed = result.scenarios.some(
+      (s) => s.status === "fail" || s.status === "not_executed",
+    );
+    if (replayFailed) {
+      console.log(
+        `  ⚠ Replay had failures — re-recording ${domain} with AI...`,
+      );
+      const prompt = buildPrompt({
+        features: domainFeatures,
+        scenarioFilter: filter,
+        configContent,
+        screenshotsDir,
+        headed,
+        domain,
+      });
+
+      result = await runDomain(
+        prompt,
+        domain,
+        projectRoot,
+        expectedScenarioNames,
+        { record: true, featurePath },
+      );
+    }
   } else {
     if (forceRecord) {
       console.log(`  🔴 Recording ${domain}...`);
@@ -211,9 +240,7 @@ for (const [domain, domainFeatures] of domains) {
       domain,
       projectRoot,
       expectedScenarioNames,
-      {
-        record: true,
-      },
+      { record: true, featurePath },
     );
   }
   appendDomainResults(resultsPath, result);

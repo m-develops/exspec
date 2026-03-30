@@ -2,6 +2,7 @@ import { execSync, spawnSync } from "child_process";
 import { readFileSync } from "fs";
 import { join } from "path";
 import type { DomainResult, ScenarioResult } from "./types.js";
+import { replayFilename } from "./compiler.js";
 
 /**
  * Replays a compiled domain script directly via playwright-cli,
@@ -23,6 +24,7 @@ export async function replayDomain(
   projectRoot: string,
   expectedScenarioNames: string[],
   configContent: string,
+  featurePath: string,
   options: ReplayOptions = {},
 ): Promise<DomainResult> {
   const scriptPath = join(
@@ -30,7 +32,7 @@ export async function replayDomain(
     "features",
     "compiled",
     domain,
-    "replay.js",
+    replayFilename(featurePath),
   );
   const script = readFileSync(scriptPath, "utf-8");
 

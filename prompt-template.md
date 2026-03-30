@@ -210,6 +210,7 @@ async (page) => {
 - Use `page.waitForTimeout()` for async waits (use the configured `wait_after_navigation` value)
 - Include authentication at the start (login once, reuse session)
 - Use the actual URLs, selectors, and values from the test run
+- **CRITICAL — avoid strict mode violations:** When a `getByRole()` or `locator()` could match multiple elements, use `.first()`, `.nth(0)`, or a more specific parent locator to ensure exactly one element is matched. For example: `page.getByRole('columnheader', { name: 'Cost type' }).first()` instead of `page.getByRole('columnheader', { name: 'Cost type' })`. Test your selectors mentally — if a table has both a frozen column header and a regular header for the same column, both will match.
 
 ## UI Map Updates (incremental — as you go)
 
