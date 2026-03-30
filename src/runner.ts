@@ -1,5 +1,6 @@
 import { spawn } from "child_process";
 import type { DomainResult, ScenarioResult } from "./types.js";
+import { extractReplayScript, saveCompiledScript } from "./compiler.js";
 
 function truncate(text: string, max = 500): string {
   return text.length > max ? text.slice(0, max) + "..." : text;
@@ -10,6 +11,7 @@ export async function runDomain(
   domain: string,
   projectRoot: string,
   expectedScenarioNames: string[],
+  options: { record?: boolean } = {},
 ): Promise<DomainResult> {
   try {
     const { result, cost, duration } = await invokeClaude(prompt, projectRoot);
@@ -19,6 +21,21 @@ export async function runDomain(
       expectedScenarioNames,
       result,
     );
+
+    // Extract and save compiled replay script from the agent's output
+    if (options.record) {
+      const replayScript = extractReplayScript(result);
+      if (replayScript) {
+        const scriptPath = saveCompiledScript(
+          projectRoot,
+          domain,
+          replayScript,
+        );
+        console.log(`    📝 Compiled script saved: ${scriptPath}`);
+      } else {
+        console.log(`    ⚠ No replay script found in agent output`);
+      }
+    }
 
     return {
       domain,

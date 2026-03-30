@@ -10,6 +10,8 @@ import { discoverFeatures } from "./discovery.js";
 import { parseFeature, filterScenarios, groupByDomain } from "./gherkin.js";
 import { buildPrompt } from "./prompt.js";
 import { runDomain } from "./runner.js";
+import { hasCompiledScript } from "./compiler.js";
+import { replayDomain } from "./replay.js";
 import {
   generateRunId,
   initResultsFile,
@@ -64,6 +66,7 @@ Options:
   --filter <name>   Run only scenarios matching <name>
   --fail-fast       Stop after first failure
   --headed          Run with visible browser
+  --record          Force re-record (regenerate compiled scripts)
   --verbose         Show detailed setup output
   -v, --version     Show version
   -h, --help        Show this help`);
@@ -75,6 +78,7 @@ let filter: string | null = null;
 let failFast = false;
 let headed = false;
 let verbose = false;
+let forceRecord = false;
 
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--filter" && args[i + 1]) {
@@ -85,6 +89,8 @@ for (let i = 0; i < args.length; i++) {
     headed = true;
   } else if (args[i] === "--verbose") {
     verbose = true;
+  } else if (args[i] === "--record") {
+    forceRecord = true;
   } else if (!args[i].startsWith("--")) {
     target = args[i];
   }
@@ -167,23 +173,49 @@ for (const [domain, domainFeatures] of domains) {
 const totals: RunTotals = { passed: 0, failed: 0, skipped: 0, notExecuted: 0 };
 
 for (const [domain, domainFeatures] of domains) {
-  const prompt = buildPrompt({
-    features: domainFeatures,
-    scenarioFilter: filter,
-    configContent,
-    screenshotsDir,
-    headed,
-  });
-
   const expectedScenarioNames = domainFeatures.flatMap((f) =>
     f.scenarios.map((s) => s.name),
   );
-  const result = await runDomain(
-    prompt,
-    domain,
-    projectRoot,
-    expectedScenarioNames,
-  );
+
+  let result;
+
+  // Check if we can replay from compiled scripts
+  const canReplay = !forceRecord && hasCompiledScript(projectRoot, domain);
+
+  if (canReplay) {
+    console.log(`  ⚡ Replaying ${domain} from compiled script...`);
+    result = await replayDomain(
+      domain,
+      projectRoot,
+      expectedScenarioNames,
+      configContent,
+      { headed },
+    );
+  } else {
+    if (forceRecord) {
+      console.log(`  🔴 Recording ${domain}...`);
+    } else {
+      console.log(`  🔴 No compiled script for ${domain}, recording...`);
+    }
+    const prompt = buildPrompt({
+      features: domainFeatures,
+      scenarioFilter: filter,
+      configContent,
+      screenshotsDir,
+      headed,
+      domain,
+    });
+
+    result = await runDomain(
+      prompt,
+      domain,
+      projectRoot,
+      expectedScenarioNames,
+      {
+        record: true,
+      },
+    );
+  }
   appendDomainResults(resultsPath, result);
 
   if (result.cost) {

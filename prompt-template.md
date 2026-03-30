@@ -72,9 +72,10 @@ Between scenarios, start fresh if needed (create new test data).
 - Check dropdown menus and action bars for buttons.
 
 **Reading snapshots correctly:**
-- Always save snapshots to a known filename: `playwright-cli snapshot --filename=snapshot.yml`
-- Then read with `cat snapshot.yml`. This avoids having to parse the snapshot output for the file path.
-- You can pipe the snapshot command output to `tail -3` or discard it — the actual data is in `snapshot.yml`.
+- Always save snapshots to the SAME filename: `playwright-cli snapshot --filename={SNAPSHOT_FILE}`
+- Then read with `cat {SNAPSHOT_FILE}`. This avoids having to parse the snapshot output for the file path.
+- Always reuse this SAME filename for every snapshot — do NOT use descriptive names or create multiple snapshot files.
+- You can pipe the snapshot command output to `tail -3` or discard it — the actual data is in `{SNAPSHOT_FILE}`.
 
 ### 3b. Waiting for dynamic content
 
@@ -93,23 +94,40 @@ At the START of the run, before opening the browser, check which UI maps exist:
 - Use `Glob` with pattern `features/ui-maps/*.yml` to list all available maps.
 - Use `Read` to load ALL found map files into your context.
 
+**Matching URLs to maps:**
+
+Each map has a `url_pattern` field with `*` as a wildcard for dynamic path segments (UUIDs, IDs). To find the right map:
+1. Take the current browser URL and strip all query params (`?tab=3&returnUrl=...` → removed)
+2. Compare the remaining path against each map's `url_pattern`
+3. `*` matches exactly one path segment (e.g. a UUID)
+
+Examples:
+- `/admin/orders` matches `url_pattern: /admin/orders`
+- `/admin/orders/abc-123-def` matches `url_pattern: /admin/orders/*`
+- `/admin/orders/abc-123-def/items` matches `url_pattern: /admin/orders/*/items`
+- `/admin/orders/abc-123-def?tab=2&returnUrl=...` → strip params → matches `url_pattern: /admin/orders/*`
+
+**Tabbed pages:**
+
+Maps for tabbed pages have a `tab` field. Multiple maps can share the same `url_pattern` — the `tab` field disambiguates them. When you click a tab:
+1. You know which tab you clicked (e.g. "Products")
+2. Find the map where `url_pattern` matches the current URL AND `tab` matches the tab name
+3. Use that map's elements
+
+Maps without a `tab` field match any tab (or pages without tabs).
+
 **How to use maps — follow these rules strictly:**
 
 When you navigate to a page that HAS a cached map:
 - You already know the page structure and what elements exist.
-- Wait for async data (see 3b), then take exactly ONE `playwright-cli snapshot`.
-- Use the map to quickly find the refs for the elements you need — scan the snapshot for the selectors listed in the map (e.g. if map says `selector: 'textbox "Email address"'`, find the line with `textbox "Email address" [ref=eXX]` in the snapshot and use that ref).
+- Wait for async data (see 3b), then take exactly ONE `playwright-cli snapshot --filename={SNAPSHOT_FILE}`.
+- Use the map to quickly find the refs for the elements you need — scan the snapshot for the selectors listed in the map (e.g. if map says `selector: 'textbox "Email"'`, find the line with `textbox "Email" [ref=eXX]` in the snapshot and use that ref).
 - This is much faster than reading the entire snapshot tree and reasoning about what each element is.
 - For assertion steps (e.g. "Then I should see a table with columns X, Y, Z"), if the map already lists those columns, just confirm the table element exists in the snapshot. Do not parse the entire tree.
 - **If a map selector is not found in the snapshot**, fall back to full snapshot reasoning as normal.
 
 When you navigate to a page WITHOUT a map:
 - Wait for async data (see 3b), then take a snapshot and reason about the page as normal.
-
-Route-slug convention: URL path with `/` replaced by `-`, leading `/` removed.
-- `/dashboard` → `features/ui-maps/dashboard.yml`
-- `/settings/profile` → `features/ui-maps/settings-profile.yml`
-- For dynamic IDs (`/users/123`): `features/ui-maps/users-detail.yml`
 
 ### 4. Error handling
 
@@ -145,17 +163,73 @@ Brief confirmation of what was verified, including actual values seen.
 **Reason**: Why the scenario was skipped
 ```
 
-## UI Map Updates (after all scenarios)
+## Compiled Replay Script (REQUIRED)
 
-After all scenarios are complete and before closing the browser, update UI maps only when needed:
-- **Create a new map** only if you visited a page that has NO existing map file. This includes any authentication page — always map it so future runs can authenticate faster.
-- **Update an existing map** only if you discovered new elements NOT already in the map (e.g. you fell back to a snapshot and found missing elements).
+After your report, you MUST include a compiled replay script that can re-run all PASSING scenarios directly without AI. This script will be saved and executed by `playwright-cli run-code` on subsequent runs.
+
+Output the script in a fenced code block tagged `replay`:
+
+````replay
+async (page) => {
+  // Auth
+  await page.goto('BASE_URL');
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.waitForTimeout(2000);
+  await page.getByRole('textbox', { name: 'Email address' }).fill('EMAIL');
+  await page.getByRole('textbox', { name: 'Password' }).fill('PASSWORD');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.waitForTimeout(3000);
+
+  const results = [];
+
+  // Scenario: Scenario Name
+  try {
+    // ... all Playwright commands for this scenario ...
+    results.push({ scenario: 'Scenario Name', status: 'pass', details: 'OK' });
+  } catch (e) {
+    results.push({ scenario: 'Scenario Name', status: 'fail', details: e.message });
+  }
+
+  // Scenario: Next Scenario
+  try {
+    // ...
+    results.push({ scenario: 'Next Scenario', status: 'pass', details: 'OK' });
+  } catch (e) {
+    results.push({ scenario: 'Next Scenario', status: 'fail', details: e.message });
+  }
+
+  return { results };
+}
+````
+
+**Rules for the replay script:**
+- Use the actual `page.getByRole(...)`, `page.goto(...)`, `page.locator(...)` calls that you used during testing — the exact Playwright code, not playwright-cli commands
+- Include ONLY passing scenarios — skip failed or skipped ones
+- Wrap each scenario in its own try/catch block
+- Return a `{ results }` array with scenario name, status, and details
+- Use `page.waitForTimeout()` for async waits (use the configured `wait_after_navigation` value)
+- Include authentication at the start (login once, reuse session)
+- Use the actual URLs, selectors, and values from the test run
+
+## UI Map Updates (incremental — as you go)
+
+Write UI maps **immediately after visiting a page or tab for the first time**, not at the end of all scenarios. This keeps each map small and accurate.
+
+- **After taking a snapshot on a page/tab that has NO existing map**, write the map right away before continuing with the next step.
+- **Update an existing map** immediately if you discovered new elements NOT already in the map.
 - **Do NOT rewrite maps** that were complete and worked correctly.
-- Use `Write` to save maps to `features/ui-maps/{route-slug}.yml`
-- Use this YAML format:
+
+**File naming:** Use semantic page names, not URL slugs.
+- Use `Write` to save maps to `features/ui-maps/{semantic-name}.yml`
+- For tabbed pages, create a separate file per tab: `{page-name}-{tab-name}.yml`
+- Use lowercase, kebab-case names derived from the page's purpose (not the URL)
+
+**YAML format for regular pages:**
 
 ```yaml
-route: /products
+page: order-list
+url_pattern: /admin/orders
+description: "Order list page"
 last_updated: 2026-03-28T10:27:00Z
 elements:
   search_box:
@@ -169,8 +243,28 @@ elements:
     columns: ["Name", "Status", "Created"]
 ```
 
+**YAML format for tab pages:**
+
+```yaml
+page: order-detail-products
+url_pattern: /admin/orders/*
+tab: Products
+description: "Order detail — Products tab"
+last_updated: 2026-03-28T10:27:00Z
+elements:
+  add_product_button:
+    description: "Add new product"
+    selector: 'button "+ Add new product"'
+  products_table:
+    description: "Products data table"
+    columns: ["Product", "Quantity", "Price"]
+```
+
+**Rules for map content:**
 - Use semantic selectors (role + name from the snapshot) — NOT ref IDs like `e15` (they change between sessions).
+- Use `*` in `url_pattern` for dynamic path segments (UUIDs, IDs).
 - Only include elements useful for test interactions (buttons, inputs, dropdowns, table columns, links).
+- Include the `tab` field only for tabbed pages. Pages without tabs omit it.
 
 ## Rules
 
@@ -178,7 +272,7 @@ elements:
 - Report EVERY scenario
 - Be autonomous: don't ask questions, figure it out
 - Take screenshots ONLY on failures
-- Before closing the browser, you MUST write UI maps for any pages you visited that don't have a map yet (see "UI Map Updates" section above). Then close with `playwright-cli close`
+- Write UI maps incrementally as you visit new pages (see "UI Map Updates" section). Close the browser with `playwright-cli close` when done
 - When creating test data, use distinctive names (e.g. include a timestamp or random suffix)
 
 Begin testing now!

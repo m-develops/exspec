@@ -12,6 +12,7 @@ export function buildPrompt(options: {
   configContent: string;
   screenshotsDir: string;
   headed?: boolean;
+  domain?: string;
 }): string {
   let template = readFileSync(templatePath, "utf-8");
 
@@ -27,13 +28,15 @@ export function buildPrompt(options: {
     : "ALL";
 
   const headedMode = options.headed ? "headed (visible browser)" : "headless";
+  const snapshotFile = `.playwright-cli/snapshot-${options.domain ?? "default"}.yml`;
 
   template = template
     .replaceAll("{FEATURE_CONTENT}", featureContent)
     .replaceAll("{SCENARIOS_TO_EXECUTE}", scenariosToExecute)
     .replaceAll("{CONFIG_CONTEXT}", options.configContent)
     .replaceAll("{SCREENSHOTS_DIR}", options.screenshotsDir)
-    .replaceAll("{HEADED_MODE}", headedMode);
+    .replaceAll("{HEADED_MODE}", headedMode)
+    .replaceAll("{SNAPSHOT_FILE}", snapshotFile);
 
   return template;
 }
